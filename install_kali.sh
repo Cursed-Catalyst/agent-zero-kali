@@ -4,6 +4,7 @@
 #  Compatible with Python 3.13 (Kali default)
 #  Default model: Claude claude-sonnet-4-5
 #  Auto-starts on http://localhost:5000
+#  All dependencies pre-installed — no manual pip installs!
 # ============================================================
 
 set -e
@@ -40,13 +41,12 @@ sudo apt-get update -qq
 sudo apt-get install -y \
   git curl wget build-essential \
   python3-pip python3-venv python3-dev \
-  libssl-dev libffi-dev \
+  libssl-dev libffi-dev libsodium-dev \
   chromium chromium-driver \
   --no-install-recommends -qq
 
 PYTHON=$(command -v python3)
-PY_VER=$($PYTHON --version)
-log "Using $PY_VER"
+log "Using $($PYTHON --version)"
 
 # ── 2. Clone Agent Zero ────────────────────────────────────
 if [ -d "$INSTALL_DIR" ]; then
@@ -65,61 +65,94 @@ $PYTHON -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip setuptools wheel -q
 
-# ── 4. Write Python 3.13 compatible requirements ──────────
-log "Writing Python 3.13 compatible requirements..."
-cat > requirements_py313.txt << 'REQS'
-ansio==0.0.1
-inputimeout==1.0.4
-GitPython
-flask
-flask-basicauth
-flask-socketio
-anthropic
-langchain
-langchain-community
-langchain-anthropic
-langchain-openai
-langchain-google-genai
-langchain-groq
-langchain-mistralai
-langchain-chroma
-langchain-ollama
-langchain-huggingface
-sentence-transformers
-chromadb
-python-dotenv
-requests
-beautifulsoup4
-markdownify
-html2text
-faiss-cpu
-numpy
-pydantic
-paramiko
-pypdf
-webcolors
-tiktoken
-openai
-playwright
-browseruse
-duckduckgo-search
-docker
-mcp
-Pillow
-REQS
+# ── 4. Install ALL required packages ──────────────────────
+log "Installing all required packages (this will take a few minutes)..."
+pip install --ignore-requires-python -q \
+  # Web framework
+  flask \
+  flask-basicauth \
+  flask-socketio \
+  uvicorn \
+  aiohttp \
+  websockets \
+  python-socketio \
+  eventlet \
+  nest-asyncio \
+  # Anthropic / LLM
+  anthropic \
+  openai \
+  litellm \
+  # LangChain
+  langchain \
+  langchain-community \
+  langchain-anthropic \
+  langchain-openai \
+  langchain-google-genai \
+  langchain-groq \
+  langchain-mistralai \
+  langchain-chroma \
+  langchain-ollama \
+  langchain-huggingface \
+  # Embeddings & Vector DB
+  sentence-transformers \
+  chromadb \
+  faiss-cpu \
+  # Utilities
+  python-dotenv \
+  requests \
+  aiofiles \
+  asyncio \
+  # Text processing
+  beautifulsoup4 \
+  markdownify \
+  html2text \
+  dirty-json \
+  simpleeval \
+  # Security / crypto
+  cryptography \
+  paramiko \
+  # Data
+  numpy \
+  pydantic \
+  # PDF & docs
+  pypdf \
+  Pillow \
+  # Git
+  GitPython \
+  # Search
+  duckduckgo-search \
+  # Agent Zero specific
+  ansio \
+  inputimeout \
+  mcp \
+  tiktoken \
+  tokenizers \
+  webcolors \
+  rfc3986 \
+  annotated-doc \
+  browser-use \
+  # Misc
+  schedule \
+  rich \
+  typer \
+  pyyaml \
+  toml \
+  regex \
+  tqdm \
+  packaging
 
-log "Installing packages (this will take a few minutes)..."
-pip install -r requirements_py313.txt --ignore-requires-python -q 2>&1 | tail -5
+log "Core packages installed!"
 
-# Install kokoro separately without conflicting deps
-log "Installing kokoro (TTS)..."
+# ── 5. Install kokoro without heavy deps ──────────────────
+log "Installing kokoro (TTS — voice features)..."
 pip install kokoro --no-deps -q 2>/dev/null || warn "kokoro skipped — voice features disabled (non-fatal)"
 
-# Install playwright browsers
-log "Installing Playwright browser..."
+# ── 6. Playwright ─────────────────────────────────────────
+log "Installing Playwright..."
+pip install playwright -q
 playwright install chromium 2>/dev/null || warn "Playwright chromium skipped (non-fatal)"
 
-# ── 5. Claude defaults patch ──────────────────────────────
+# ── 7. Claude defaults patch ──────────────────────────────
 log "Installing Claude defaults patch..."
 cat > "$INSTALL_DIR/initialize_claude_patch.py" << 'PYEOF'
 """
@@ -156,13 +189,13 @@ else
   log "initialize.py already patched."
 fi
 
-# ── 6. Anthropic API key ──────────────────────────────────
+# ── 8. Anthropic API key ──────────────────────────────────
 echo ""
 echo -e "${BOLD}${CYAN}[?] Enter your Anthropic API key (starts with sk-ant-...):${NC}"
 read -r -s ANTHROPIC_KEY
 echo ""
 
-# ── 7. Write .env ─────────────────────────────────────────
+# ── 9. Write .env ─────────────────────────────────────────
 log "Writing .env configuration..."
 cat > "$INSTALL_DIR/.env" << EOF
 # Anthropic
@@ -186,7 +219,7 @@ A0_EMBED_MODEL_PROVIDER=huggingface
 A0_EMBED_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
 EOF
 
-# ── 8. Launcher ───────────────────────────────────────────
+# ── 10. Launcher ──────────────────────────────────────────
 log "Writing launcher..."
 cat > "$INSTALL_DIR/start.sh" << LAUNCHER
 #!/bin/bash
@@ -202,7 +235,7 @@ python run_ui.py --port ${PORT} --host 127.0.0.1
 LAUNCHER
 chmod +x "$INSTALL_DIR/start.sh"
 
-# ── 9. Tailscale ──────────────────────────────────────────
+# ── 11. Tailscale ─────────────────────────────────────────
 echo ""
 echo -e "${BOLD}${CYAN}[?] Install Tailscale for remote access from your other devices? [y/N]${NC}"
 read -r TAILSCALE
@@ -216,7 +249,7 @@ if [[ "$TAILSCALE" =~ ^[Yy]$ ]]; then
   log "Access from other devices: http://${TAILSCALE_IP}:${PORT}"
 fi
 
-# ── 10. Done ──────────────────────────────────────────────
+# ── 12. Done ──────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════╗"
 echo -e "║   ✅  Installation Complete!              ║"
